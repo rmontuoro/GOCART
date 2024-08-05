@@ -42,6 +42,7 @@ module Aerosol_Cap
       "inst_temp_levels                     ", &
       "inst_zonal_wind_levels               ", &
       "inst_merid_wind_levels               ", &
+      "inst_omega_levels                    ", &
       "inst_cloud_frac_levels               ", &
       "inst_ice_nonconv_tendency_levels     ", &
       "inst_liq_nonconv_tendency_levels     ", &

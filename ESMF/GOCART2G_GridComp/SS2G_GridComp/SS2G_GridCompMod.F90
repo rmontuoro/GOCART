@@ -745,6 +745,7 @@ contains
     type (SS2G_GridComp), pointer     :: self
 
     integer                           :: n
+    real, pointer,     dimension(:,:) :: lats
     real, allocatable, dimension(:,:) :: drydepositionfrequency, dqa
     real                              :: fwet
     logical                           :: KIN
@@ -769,7 +770,7 @@ contains
 
 !   Get parameters from generic state.
 !   -----------------------------------
-    call MAPL_Get (MAPL, INTERNAL_ESMF_STATE=INTERNAL, __RC__)
+    call MAPL_Get (MAPL, INTERNAL_ESMF_STATE=INTERNAL, LATS = LATS, __RC__)
 
 #include "SS2G_GetPointer___.h"
 
@@ -812,13 +813,25 @@ contains
 
 !   Large-scale Wet Removal
 !   ------------------------
-    KIN = .TRUE.
-    do n = 1, self%nbins
-       fwet = 1.
-       call WetRemovalGOCART2G(self%km, self%klid, self%nbins, self%nbins, n, self%cdt, 'sea_salt', &
-                               KIN, MAPL_GRAV, fwet, SS(:,:,:,n), ple, t, airdens, &
-                               pfl_lsan, pfi_lsan, cn_prcp, ncn_prcp, SSWT, __RC__)
-    end do
+    select case (self%wetremoval)
+      case ('gocart')
+         KIN = .TRUE.
+         do n = 1, self%nbins
+            fwet = 1.
+            call WetRemovalGOCART2G(self%km, self%klid, self%nbins, self%nbins, n, self%cdt, 'sea_salt', &
+                                    KIN, MAPL_GRAV, fwet, SS(:,:,:,n), ple, t, airdens, &
+                                    pfl_lsan, pfi_lsan, cn_prcp, ncn_prcp, SSWT, __RC__)
+         end do
+      case ('noaa')
+!       Use simple wet removal scheme, based on GEFSv12
+        do n = 1, self%nbins
+          fwet = 1.0
+          call WetRemovalNOAA  (self%km, self%klid, self%nbins, self%nbins, n, self%cdt, 'sea_salt', &
+                                MAPL_GRAV, real(MAPL_RADIANS_TO_DEGREES), fwet, SS(:,:,:,n),   &
+                                ple, t, airdens, qice, qliq, w, cn_prcp, ncn_prcp, lats, SSWT, __RC__)
+        end do
+    end select
+
 
 !   Compute diagnostics
 !   -------------------

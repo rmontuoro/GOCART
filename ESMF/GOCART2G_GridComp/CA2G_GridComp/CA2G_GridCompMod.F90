@@ -922,6 +922,7 @@ contains
     type(MAPL_VarSpec), pointer       :: InternalSpec(:)
 
     integer                           :: n
+    real, pointer, dimension(:,:)     :: lats
     real, allocatable, dimension(:,:) :: drydepositionfrequency, dqa
     real                              :: fwet
     logical                           :: KIN
@@ -954,6 +955,7 @@ contains
 !   Get parameters from generic state.
 !   -----------------------------------
     call MAPL_Get (MAPL, INTERNAL_ESMF_STATE=internal, &
+                         LATS = LATS, &
                          INTERNALSPEC = InternalSpec, __RC__)
 
     call MAPL_GetPointer (internal, intPtr_phobic, trim(comp_name)//'phobic', __RC__)
@@ -1033,14 +1035,35 @@ contains
 
 !   Large-scale Wet Removal
 !   -------------------------------
-!   Hydrophobic mode (first tracer) is not removed
-    if (associated(WT)) WT(:,:,1)=0.0
-    KIN = .true.
-!   Hydrophilic mode (second tracer) is removed
-    fwet = 1.
-    call WetRemovalGOCART2G (self%km, self%klid, self%nbins, self%nbins, 2, self%cdt, GCsuffix, &
-                             KIN, MAPL_GRAV, fwet, philic, ple, t, airdens, &
-                             pfl_lsan, pfi_lsan, cn_prcp, ncn_prcp, WT, __RC__)
+    select case (self%wetremoval)
+       case ('gocart')
+!         Hydrophobic mode (first tracer) is not removed
+          if (associated(WT)) WT(:,:,1)=0.0
+          KIN = .true.
+!         Hydrophilic mode (second tracer) is removed
+          fwet = 1.
+          call WetRemovalGOCART2G (self%km, self%klid, self%nbins, self%nbins, 2, self%cdt, GCsuffix, &
+                                   KIN, MAPL_GRAV, fwet, philic, ple, t, airdens, &
+                                   pfl_lsan, pfi_lsan, cn_prcp, ncn_prcp, WT, __RC__)
+       case ('gocart-extended')
+          KIN = .true.
+!         Hydrophilic mode (second tracer) is included
+          fwet = 1.
+          do n = 1, self%nbins
+             call MAPL_VarSpecGet(InternalSpec(n), SHORT_NAME=short_name, __RC__)
+             call MAPL_GetPointer(internal, NAME=short_name, ptr=int_ptr, __RC__)
+             call WetRemovalGOCART2G (self%km, self%klid, self%nbins, self%nbins, 2, self%cdt, GCsuffix, &
+                                      KIN, MAPL_GRAV, fwet, philic, ple, t, airdens, &
+                                      pfl_lsan, pfi_lsan, cn_prcp, ncn_prcp, WT, __RC__)
+          end do
+      case ('noaa')
+!         Use simple wet removal scheme, based on GEFSv12
+          if (associated(WT)) WT(:,:,1)=0.0
+          fwet = 0.3
+          call WetRemovalNOAA  (self%km, self%klid, self%nbins, self%nbins, 2, self%cdt, GCsuffix, &
+                                MAPL_GRAV, real(MAPL_RADIANS_TO_DEGREES), fwet, philic,   &
+                                ple, t, airdens, qice, qliq, w, cn_prcp, ncn_prcp, lats, WT, __RC__)
+    end select
 
 !   Compute diagnostics
 !   -------------------

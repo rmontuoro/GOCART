@@ -28,6 +28,7 @@ module GA_EnvironmentMod
        integer                :: klid           ! vertical index of pressure lid
        real, allocatable      :: wavelengths_profile(:) ! wavelengths for profile aop [nm]
        real, allocatable      :: wavelengths_vertint(:) ! wavelengths for vertically integrated aop [nm]
+       character(:), allocatable :: wetremoval  ! wet removal scheme ('gocart', 'noaa')
     contains
        procedure :: load_from_config
     end type GA_Environment
@@ -46,6 +47,8 @@ module GA_EnvironmentMod
        type(ESMF_Config), intent(inout) :: cfg
        type(ESMF_Config), intent(inout) :: universal_cfg
        integer, optional, intent(out) :: rc
+
+       character(len=ESMF_MAXSTR) :: wetremoval
 
        !   Get nbins from cfg
        call ESMF_ConfigGetAttribute (cfg, self%nbins, label='nbins:', __RC__)
@@ -68,6 +71,8 @@ module GA_EnvironmentMod
        call ESMF_ConfigGetAttribute (cfg, self%fnum,       label='fnum:', __RC__)
        call ESMF_ConfigGetAttribute (cfg, self%rhFlag,     label='rhFlag:', __RC__)
        call ESMF_ConfigGetAttribute (cfg, self%plid,       label='pressure_lid_in_hPa:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, wetremoval,      label='wet_removal_scheme:', default='gocart', __RC__)
+       self%wetremoval = ESMF_UtilStringLowerCase(trim(wetremoval), __RC__)
        call ESMF_ConfigGetAttribute (universal_cfg, self%wavelengths_profile, label='wavelengths_for_profile_aop_in_nm:', __RC__)
        call ESMF_ConfigGetAttribute (universal_cfg, self%wavelengths_vertint, &
                                      label='wavelengths_for_vertically_integrated_aop_in_nm:', __RC__)

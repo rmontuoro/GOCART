@@ -32,6 +32,7 @@
    public Chem_SettlingSimpleOrig
    public DryDeposition
    public WetRemovalGOCART2G
+   public WetRemovalNOAA
    public UpdateAerosolState
    public Aero_Compute_Diags
    public jeagleSSTcorrection
@@ -3173,6 +3174,146 @@ CONTAINS
    deallocate(fd,DC,dpfli,stat=ios)
 
    end subroutine WetRemovalGOCART2G
+
+!==================================================================================
+!BOP
+
+! !IROUTINE: WetRemovalNOAA
+   subroutine WetRemovalNOAA ( km, klid, n1, n2, bin_ind, cdt, aero_type, grav, radToDeg, &
+                               fwet, aerosol, ple, tmpu, rhoa, qi, ql, w, precc, precl, lats, fluxout, rc )
+
+
+   use ESMF
+! !USES:
+  implicit NONE
+
+! !INPUT PARAMETERS:
+   integer, intent(in) :: km  ! total model levels
+   integer, intent(in) :: klid ! index for pressure lid
+   integer, intent(in) :: n1  ! total number of bins (probably can be removed)
+   integer, intent(in) :: n2  ! total number of bins (probably can be removed)
+   integer, intent(in) :: bin_ind ! bin index (usually the loop iteration)
+   real, intent(in)    :: cdt     ! chemistry model time-step [sec]
+   character(len=*)    :: aero_type
+   real, intent(in)    :: grav    ! gravity [m/sec^2]
+   real, intent(in)    :: radToDeg
+   real, intent(in)    :: fwet
+   real, dimension(:,:,:), intent(inout) :: aerosol  ! internal state aerosol [kg/kg]
+   real, pointer, dimension(:,:,:), intent(in)  :: ple     ! pressure level thickness [Pa]
+   real, pointer, dimension(:,:,:), intent(in)  :: tmpu    ! temperature [K]
+   real, pointer, dimension(:,:,:), intent(in)  :: rhoa    ! moist air density [kg/m^3]
+   real, pointer, dimension(:,:,:), intent(in)  :: qi      ! cloud ice mixing ratio [kg/kg]
+   real, pointer, dimension(:,:,:), intent(in)  :: ql      ! cloud liquid water mixing ratio [kg/kg]
+   real, pointer, dimension(:,:,:), intent(in)  :: w       ! moist air density [kg/m^3]
+   real, pointer, dimension(:,:),   intent(in)  :: precc   ! surface convective rain flux [kg/(m^2 sec)]
+   real, pointer, dimension(:,:),   intent(in)  :: precl   ! Non-convective precipitation [kg/(m^2 sec)]
+   real, pointer, dimension(:,:),   intent(in)  :: lats    ! latitudes (radians)
+   real, pointer, dimension(:,:,:)              :: fluxout ! tracer loss flux [kg m-2 s-1]
+
+! !OUTPUT PARAMETERS:
+   integer, intent(out) :: rc          ! Error return code:
+
+! !DESCRIPTION: Calculates the updated species concentration due to wet
+!               removal as implemented in GEFSv12 (simple large-scale removal)
+!
+! !REVISION HISTORY:
+!
+!  30Jul2024 - R. Montuoro. Initial implementation
+!
+! !Local Variables
+   integer :: i, i1, i2, j, j1, j2, k
+   integer :: LH
+   real    :: c_h2o, col_aero, col_cldw, frc, frc_scale
+   real    :: factor, delq, delz, vvel, fscale, pac, depflux
+   real    :: pdog, q
+
+  !Local Parameters
+   character(len=*), parameter :: myname    = 'WetRemovalNOAA'
+!  real,             parameter :: col_thres = 1.e-10
+   real,             parameter :: col_thres = 0.
+   real,             parameter :: lat_thres = 55.0
+!  real,             parameter :: pac_thres = 1.e-10
+   real,             parameter :: pac_thres = 0.
+   real,             parameter :: frc_min   = 1.e-06
+   real,             parameter :: frc_max   = 0.005
+!  real,             parameter :: clq_min   = 1.e-06
+!  real,             parameter :: q_min     = 1.e-16
+
+   character(len=ESMF_MAXSTR) :: msg
+!EOP
+!-----------------------------------------------------------------------------
+!  Begin...
+
+   rc = __SUCCESS__
+
+!  Initialize local variables
+!  --------------------------
+
+   i1 = lbound(rhoa,1)
+   j1 = lbound(rhoa,2)
+   i2 = ubound(rhoa,1)
+   j2 = ubound(rhoa,2)
+
+   if( associated(fluxout) ) fluxout(i1:i2,j1:j2,bin_ind) = 0.0
+
+!  Set scaling factor based on aerosol type
+!  ----------------------------------------
+
+   select case (aero_type)
+      case ('sea_salt')
+         fscale = 1.6
+      case default
+         fscale = 1.0
+   end select
+
+!  Loop over grid cells
+!  --------------------
+   LH = 1
+
+   do j = j1, j2
+      do i = i1, i2
+         ! -- check precc, precl units!!!
+         pac = precc(i,j) + precl(i,j)
+         if (pac > col_thres) then
+            col_cldw = 0.
+            col_aero = 0.
+            pac = 1000. * pac
+            do k = LH, km
+               pdog = (ple(i,j,k) - ple(i,j,k-1)) / grav
+               q = max(0., qi(i,j,k) + ql(i,j,k))
+               col_cldw = col_cldw + q * pdog
+               q = max(0., aerosol(i,j,k))
+               col_aero = col_aero + q * pdog
+            end do
+            if (col_cldw > col_thres .and. col_aero > col_thres) then
+               if (abs(radToDeg * lats(i,j)) > lat_thres) then
+                  frc_scale = 10. * fscale
+               else
+                  frc_scale =       fscale
+               end if
+               frc = max(frc_min, min(frc_max, pac / col_cldw) * frc_scale)
+
+               ! -- removal
+               depflux = 0.
+               do k = LH, km
+                  pdog = (ple(i,j,k) - ple(i,j,k-1)) / grav
+                  vvel = -w(i,j,k) / rhoa(i,j,k) / grav
+
+                  factor = max(0., frc * pdog * vvel)
+                  q      = max(0., aerosol(i,j,k))
+                  delq   = min(q, fwet * factor * q / (1. + factor))
+                  aerosol(i,j,k) = q - delq
+                  depflux        = depflux + delq * pdog / cdt
+!                 write(msg,'("NOAA: dep: ",3i6,": ",5g20.6)') i,j,k,depflux,q,delq,pdog,factor
+!                 call ESMF_LogWrite(msg)
+               end do
+               if (associated(fluxout)) fluxout(i,j,bin_ind) = depflux
+            end if
+         end if
+      end do
+   end do
+
+   end subroutine WetRemovalNOAA
 
 !=============================================================================
 !BOP

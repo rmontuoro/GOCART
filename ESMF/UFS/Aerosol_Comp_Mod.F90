@@ -30,6 +30,7 @@ module Aerosol_Comp_Mod
       "PLE                             ", "inst_pres_interface             ", &
       "U                               ", "inst_zonal_wind_levels          ", &
       "V                               ", "inst_merid_wind_levels          ", &
+      "W                               ", "inst_omega_levels               ", &
       "PFI_LSAN                        ", "inst_ice_nonconv_tendency_levels", &
       "PFL_LSAN                        ", "inst_liq_nonconv_tendency_levels", &
       "FCLD                            ", "inst_cloud_frac_levels          "  &
@@ -335,6 +336,24 @@ contains
                   end do
                 end do
               end do
+            case ("QICE")
+              do k = 1, nk + 1
+                kk = nk - k + 1
+                do j = 1, nj
+                  do i = 1, ni
+                    fp3dr(i,j,kk) = q(i,j,k,3)
+                  end do
+                end do
+              end do
+            case ("QLIQ")
+              do k = 1, nk + 1
+                kk = nk - k + 1
+                do j = 1, nj
+                  do i = 1, ni
+                    fp3dr(i,j,kk) = q(i,j,k,2)
+                  end do
+                end do
+              end do
             case ("SLC")
               fp2dr = slc(:,:,1)
             case ("Z0H")
@@ -419,6 +438,7 @@ contains
     type(MAPL_Cap),             pointer :: cap
     type(Aerosol_Tracer_T),     pointer :: trp
     type(Aerosol_InternalState_T)       :: is
+    character(len=ESMF_MAXSTR) :: msg
 
     ! -- begin
     if (present(rc)) rc = ESMF_SUCCESS
@@ -553,7 +573,6 @@ contains
                 ! -- import
                 scalefac = AerosolTracerGetUnitsConv(tracerUnits, fieldUnits)
                 if (associated(fp3d)) then
-                  v = tracerId
                   do k = 1, nk
                     kk = nk - k + 1
                     do j = 1, nj

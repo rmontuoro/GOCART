@@ -44,6 +44,8 @@ category: IMPORT
  AIRDENS    | kg/m^3   | xyz  | C    | OPT     |                                          | moist_air_density
  DELP       | Pa       | xyz  | C    | OPT     |                                          | pressure_thickness
  RH2        | 1        | xyz  | C    | OPT     |                                          | Rel_Hum_after_moist
+ QICE       | 1        | xyz  | C    | OPT     |                                          | Cloud ice water mixing ratio [kg/kg]
+ QLIQ       | 1        | xyz  | C    | OPT     |                                          | Cloud liquid water mixing ratio [kg/kg]
  T          | K        | xyz  | C    | OPT     |                                          | air_temperature
  ZLE        | m        | xyz  | E    | OPT     |                                          | geopotential_height
  PLE        | Pa       | xyz  | E    | OPT     |                                          | air_pressure
@@ -51,6 +53,7 @@ category: IMPORT
  PFI_LSAN   | kg/m2/s  | xyz  | E    | OPT     |                                          | 3D_flux_of_ice_nonconvective_precipitation
  U          | m s-1    | xyz  | C    | OPT     |                                          | eastward_wind
  V          | m s-1    | xyz  | C    | OPT     |                                          | northward_wind
+ W          | m s-1    | xyz  | C    | OPT     |                                          | omega
 
 category: EXPORT
 #----------------------------------------------------------------------------------------
