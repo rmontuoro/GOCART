@@ -73,7 +73,9 @@ module GA_EnvironmentMod
        call ESMF_ConfigGetAttribute (cfg, self%fnum,       label='fnum:', __RC__)
        call ESMF_ConfigGetAttribute (cfg, self%rhFlag,     label='rhFlag:', __RC__)
        call ESMF_ConfigGetAttribute (cfg, self%plid,       label='pressure_lid_in_hPa:', __RC__)
-       call ESMF_ConfigGetAttribute (cfg, self%fwet,       label='fwet:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%fwet,       label='fwet_ice:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%fwet,       label='fwet_snow:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%fwet,       label='fwet_rain:', __RC__)
        call ESMF_ConfigGetAttribute (cfg, wet_removal_scheme, label='wet_removal_scheme:', default='gocart', __RC__)
        self%wet_removal_scheme = ESMF_UtilStringLowerCase(trim(wet_removal_scheme), __RC__)
 
@@ -96,10 +98,15 @@ module GA_EnvironmentMod
        !   ---------------
        !
        !   * Rainout efficiency
-       write(msg,'(5(2x,g20.8))') self%fwet
-       call ESMF_LogWrite("GA: config: fwet: "//msg)
-
-       _ASSERT_RC(any(abs(self%fwet - 1.) <= 1.), "Error. Rainout efficiency (fwet) must be between 0. and 1.", ESMF_RC_VAL_OUTOFRANGE)
+       write(msg,'(5(2x,g20.8))') self%fwet_ice
+       call ESMF_LogWrite("GA: config: fwet_ice: "//msg)
+       _ASSERT_RC(any(abs(self%fwet_ice - 1.) <= 1.), "Error. Rainout efficiency (fwet) must be between 0. and 1.", ESMF_RC_VAL_OUTOFRANGE)
+       write(msg,'(5(2x,g20.8))') self%fwet_snow
+       call ESMF_LogWrite("GA: config: fwet_snow: "//msg)
+       _ASSERT_RC(any(abs(self%fwet_snow - 1.) <= 1.), "Error. Rainout efficiency (fwet) must be between 0. and 1.", ESMF_RC_VAL_OUTOFRANGE)
+       write(msg,'(5(2x,g20.8))') self%fwet_rain
+       call ESMF_LogWrite("GA: config: fwet_rain: "//msg)
+       _ASSERT_RC(any(abs(self%fwet_rain - 1.) <= 1.), "Error. Rainout efficiency (fwet) must be between 0. and 1.", ESMF_RC_VAL_OUTOFRANGE)
 
        !   * Wet removal scheme
        _ASSERT_RC(any(self%wet_removal_scheme == [character(len=7) :: 'gocart','ufs']), "Error. Unallowed wet removal scheme: "//trim(self%wet_removal_scheme)//". Allowed: gocart, ufs", ESMF_RC_NOT_IMPL)
