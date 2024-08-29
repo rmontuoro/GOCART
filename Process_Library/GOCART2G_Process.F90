@@ -3302,8 +3302,7 @@ CONTAINS
            dpog(k) = delp / grav
            delz(k) = dpog(k) / rhoa(i,j,k)
 
-           qq(k) = (dqls * kg_to_cm3_liq + dqis * kg_to_cm3_ice) / delz(k) !dqls * rhoa(i,j,k) * grav / delp / density_liq + &
-                   !dqis * rhoa(i,j,k) * grav / delp / density_ice
+           qq(k) = (dqls * kg_to_cm3_liq + dqis * kg_to_cm3_ice) / delz(k)
 
            ! -- precipitation flux from upper level (convert from kg/m2/s to cm3/cm2/s)
            pdwn(k) = kg_to_cm3_liq * pfllsan(i,j,km1) &
