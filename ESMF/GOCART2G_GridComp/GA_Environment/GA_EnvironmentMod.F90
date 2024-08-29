@@ -19,7 +19,9 @@ module GA_EnvironmentMod
 !      logical                :: scav_byColdCloud ! new flag example
        real, allocatable      :: molwght(:)     ! molecular weight            !NOT UNIVERSAL ONLY FOR GASES, 
        real, allocatable      :: fnum(:)        ! number of particles per kg mass
-       real, allocatable      :: fwet(:)        ! large scale wet removal scaling factor
+       real, allocatable      :: fwet_ice(:)    ! large scale wet removal scaling factor for ice
+       real, allocatable      :: fwet_snow(:)   ! large scale wet removal scaling factor for snow 
+       real, allocatable      :: fwet_rain(:)   ! large scale wet removal scaling factor for rain
        integer                :: rhFlag
        integer                :: nbins
        integer                :: km             ! vertical grid dimension
