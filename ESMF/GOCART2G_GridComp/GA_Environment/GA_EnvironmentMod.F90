@@ -62,8 +62,8 @@ module GA_EnvironmentMod
        !   Parse config file into private internal state
        !   ----------------------------------------------
        allocate(self%radius(nbins), self%rhop(nbins), self%fscav(nbins), self%molwght(nbins), &
-                self%fnum(nbins), self%fwet(nbins), self%wavelengths_profile(n_wavelengths_profile), &
-                self%wavelengths_vertint(n_wavelengths_vertint), &
+                self%fnum(nbins), self%fwet_ice(nbins), self%fwet_snow(nbins), self%fwet_rain(nbins), &
+                self%wavelengths_profile(n_wavelengths_profile), self%wavelengths_vertint(n_wavelengths_vertint), &
                 __STAT__)
        
        call ESMF_ConfigGetAttribute (cfg, self%radius,     label='particle_radius_microns:', __RC__)
