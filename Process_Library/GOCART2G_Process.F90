@@ -3606,43 +3606,29 @@ CONTAINS
        real, parameter :: k_wash = 1.06e-03
        real, parameter :: h2s = 3600.0
 
-       real, dimension(2,2), parameter :: alpha = reshape([ &
-       ! alpha            | size   | precip. type
-       !------------------|--------|-------------
-         26.0 * k_wash, & ! fine   | solid
-                k_wash, & ! fine   | liquid
-         1.57         , & ! coarse | solid
-         0.92           & ! coarse | liquid
-         ], [2,2])
-
-       real, dimension(2,2), parameter :: beta = reshape([ &
-       ! beta     | size   | precip. type
-       !----------|----------------------
-         0.96 , & ! fine   | solid
-         0.61 , & ! fine   | liquid
-         0.96 , & ! coarse | solid
-         0.79   & ! coarse | liquid
-         ], [2,2])
-
-       ! -- begin
-
-       washfrac_aerosol = zero
-
        if ( f > zero ) then
-         ! -- select aerosol category (coarse, fine)
-         j = 1
-         if ( radius > radius_fine ) j = 2
-
-         ! -- select precipitation type (liquid, solid)
-         i = 2
-         if ( tk < 268. ) i = 1
-
-         ! -- convert instant rates (s-1) to hourly rates
          pph = pdwn * h2s
-         dth = dt   / h2s
+         dth = dt / h2s
 
-         washfrac_aerosol = f * ( one - exp( -alpha(i,j) * (pph / f) ** beta(i,j) * dth ) )
+         if ( radius < radius_fine ) then
 
+           ! -- coarse
+           if ( tk >= 268. ) then
+            washfrac_aerosol = f * ( one - exp( -0.92 * ( pph / f ) ** 0.79 * dth ))
+           else
+            washfrac_aerosol = f * ( one - exp( -1.57 * ( pph / f ) ** 0.96 * dth ))
+           endif
+
+         else
+
+           ! -- fine
+           if ( tk >= 268. ) then
+            washfrac_aerosol = f * ( one - exp( -26.0 * k_wash * ( pph / radius ) ** 0.61 * dth ))
+           else
+            washfrac_aerosol = f * ( one - exp( -1.0 * k_wash * ( pph / radius ) ** 0.96 * dth ))
+           endif
+
+         endif
        end if
 
      end function washfrac_aerosol
