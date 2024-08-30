@@ -3299,7 +3299,7 @@ CONTAINS
            ! -- initialize auxiliary arrays
            delp = ple(i,j,k) - ple(i,j,km1)
            dpog(k) = delp / grav
-           delz(k) = m_to_cm * dpog(k) / rhoa(i,j,k)
+           delz(k) = dpog(k) / rhoa(i,j,k)
 
            ! -- liquid/ice precipitation formation in grid cell (kg/m2/s)
            dqls = pfllsan(i,j,k) - pfllsan(i,j,km1)
@@ -3342,7 +3342,7 @@ CONTAINS
            k_rain = k_min + qq(k) / cwc
            f = qq(k) / ( k_rain * cwc )
 
-           call rainout( kin, rainout_eff, f, k_rain, dt, tmpu(i,j,k), delz(k), &
+           call rainout( kin, rainout_eff, f, k_rain, dt, tmpu(i,j,k), m_to_cm * delz(k), &
                          pdwn(k), c_h2o(k), cldice(k), cldliq(k), spc, lossfrac )
 
            ! -- compute and apply effective loss fraction
@@ -3379,7 +3379,7 @@ CONTAINS
 
            if ( f > zero ) then
              if ( f_rainout > zero ) then
-               call rainout( kin, rainout_eff, f_rainout, k_rain, dt, tmpu(i,j,k), delz(k), &
+               call rainout( kin, rainout_eff, f_rainout, k_rain, dt, tmpu(i,j,k), m_to_cm * delz(k), &
                              pdwn(k), c_h2o(k), cldice(k), cldliq(k), spc, lossfrac )
 
                ! -- compute and apply effective loss fraction
@@ -3395,7 +3395,7 @@ CONTAINS
                  ! -- washout from precipitation leaving through the bottom
                  qdwn = pdwn(k)
                end if
-               call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz(k), dt, spc, lossfrac )
+               call washout( kin, radius, f, tmpu(i,j,k), qdwn, m_to_cm * delz(k), dt, spc, lossfrac )
 
                if ( kin ) then
                  ! -- adjust loss fraction for aerosols
@@ -3432,7 +3432,7 @@ CONTAINS
            f = ftop
            if ( f > zero ) then
              qdwn = pdwn(km1)
-             call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz(k), dt, spc, lossfrac )
+             call washout( kin, radius, f, tmpu(i,j,k), qdwn, m_to_cm * delz(k), dt, spc, lossfrac )
 
              ! -- f is included in lossfrac for aerosols and HNO3
              if ( kin ) then
@@ -3602,47 +3602,35 @@ CONTAINS
        real            :: dth, pph
 
        ! -- local parameters
-       real, parameter :: radius_fine = 1.0 ! um
+       real, parameter :: radius_fine = 1e-4 ! um (temporary for coarse only)
        real, parameter :: k_wash = 1.06e-03
        real, parameter :: h2s = 3600.0
-
-       real, dimension(2,2), parameter :: alpha = reshape([ &
-       ! alpha            | size   | precip. type
-       !------------------|--------|-------------
-         26.0 * k_wash, & ! fine   | solid
-                k_wash, & ! fine   | liquid
-         1.57         , & ! coarse | solid
-         0.92           & ! coarse | liquid
-         ], [2,2])
-
-       real, dimension(2,2), parameter :: beta = reshape([ &
-       ! beta     | size   | precip. type
-       !----------|----------------------
-         0.96 , & ! fine   | solid
-         0.61 , & ! fine   | liquid
-         0.96 , & ! coarse | solid
-         0.79   & ! coarse | liquid
-         ], [2,2])
-
-       ! -- begin
 
        washfrac_aerosol = zero
 
        if ( f > zero ) then
-         ! -- select aerosol category (coarse, fine)
-         j = 1
-         if ( radius > radius_fine ) j = 2
-
-         ! -- select precipitation type (liquid, solid)
-         i = 2
-         if ( tk < 268. ) i = 1
-
-         ! -- convert instant rates (s-1) to hourly rates
-         pph = 10. * pdwn * h2s
+         pph = pdwn * h2s
          dth = dt / h2s
 
-         washfrac_aerosol = f * ( one - exp( -alpha(i,j) * (pph / f) ** beta(i,j) * dth ) )
+         if ( radius < radius_fine ) then
 
+           ! -- coarse
+           if ( tk >= 268. ) then
+            washfrac_aerosol = f * ( one - exp( -0.92 * ( pph / f ) ** 0.79 * dth ))
+           else
+            washfrac_aerosol = f * ( one - exp( -1.57 * ( pph / f ) ** 0.96 * dth ))
+           endif
+
+         else
+
+           ! -- fine
+           if ( tk >= 268. ) then
+            washfrac_aerosol = f * ( one - exp( -26.0 * k_wash * ( pph / radius ) ** 0.61 * dth ))
+           else
+            washfrac_aerosol = f * ( one - exp( -1.0 * k_wash * ( pph / radius ) ** 0.96 * dth ))
+           endif
+
+         endif
        end if
 
      end function washfrac_aerosol
