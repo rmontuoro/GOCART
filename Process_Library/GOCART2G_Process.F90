@@ -3299,7 +3299,7 @@ CONTAINS
            ! -- initialize auxiliary arrays
            delp = ple(i,j,k) - ple(i,j,km1)
            dpog(k) = delp / grav
-           delz(k) = m_to_cm * dpog(k) / rhoa(i,j,k)
+           delz(k) = dpog(k) / rhoa(i,j,k)
 
            ! -- liquid/ice precipitation formation in grid cell (kg/m2/s)
            dqls = pfllsan(i,j,k) - pfllsan(i,j,km1)
@@ -3342,7 +3342,7 @@ CONTAINS
            k_rain = k_min + qq(k) / cwc
            f = qq(k) / ( k_rain * cwc )
 
-           call rainout( kin, rainout_eff, f, k_rain, dt, tmpu(i,j,k), delz(k), &
+           call rainout( kin, rainout_eff, f, k_rain, dt, tmpu(i,j,k), m_to_cm * delz(k), &
                          pdwn(k), c_h2o(k), cldice(k), cldliq(k), spc, lossfrac )
 
            ! -- compute and apply effective loss fraction
@@ -3379,7 +3379,7 @@ CONTAINS
 
            if ( f > zero ) then
              if ( f_rainout > zero ) then
-               call rainout( kin, rainout_eff, f_rainout, k_rain, dt, tmpu(i,j,k), delz(k), &
+               call rainout( kin, rainout_eff, f_rainout, k_rain, dt, tmpu(i,j,k), m_to_cm * delz(k), &
                              pdwn(k), c_h2o(k), cldice(k), cldliq(k), spc, lossfrac )
 
                ! -- compute and apply effective loss fraction
@@ -3395,7 +3395,7 @@ CONTAINS
                  ! -- washout from precipitation leaving through the bottom
                  qdwn = pdwn(k)
                end if
-               call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz(k), dt, spc, lossfrac )
+               call washout( kin, radius, f, tmpu(i,j,k), qdwn, m_to_cm * delz(k), dt, spc, lossfrac )
 
                if ( kin ) then
                  ! -- adjust loss fraction for aerosols
@@ -3432,7 +3432,7 @@ CONTAINS
            f = ftop
            if ( f > zero ) then
              qdwn = pdwn(km1)
-             call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz(k), dt, spc, lossfrac )
+             call washout( kin, radius, f, tmpu(i,j,k), qdwn, m_to_cm * delz(k), dt, spc, lossfrac )
 
              ! -- f is included in lossfrac for aerosols and HNO3
              if ( kin ) then
@@ -3620,7 +3620,7 @@ CONTAINS
            else
             washfrac_aerosol = f * ( one - exp( -1.57 * ( pph / f ) ** 0.96 * dth ))
            endif
-           
+
          else
 
            ! -- fine
