@@ -32,6 +32,8 @@
    public DustEmissionK14
    public DustFluxV2HRatioMB95
    public moistureCorrectionFecan
+   public DarmenovaDragPartition
+   public LeungDragPartition
    public soilMoistureConvertVol2Grav
    public DistributePointEmission
    public updatePointwiseEmissions
@@ -295,6 +297,173 @@ CONTAINS
 
    end function DustFluxV2HRatioMB95
 
+!===============================================================================
+!BOP
+!
+! !IROUTINE: DarmenovaDragPartition - Calculates the double drag parition from Darmenova 2009
+!
+! !INTERFACE:
+   real function DarmenovaDragPartition(Lc, vegfrac, thresh)
+! !USES:
+   implicit NONE
+
+! !INPUT PARAMETERS:
+   real, intent(in) :: Lc
+   real, intent(in) :: vegfrac
+   real, intent(in) :: thresh
+
+! !CONSTANTS:
+   real, parameter :: sigb = 1.0
+   real, parameter :: mb = 0.5
+   real, parameter :: Betab = 90.0
+   real, parameter :: sigv = 1.45
+   real, parameter :: mv = 0.16
+   real, parameter :: Betav = 202.0
+
+   real            :: Lc_veg
+   real            :: Lc_bare
+   real            :: Rveg1
+   real            :: Rveg2
+   real            :: Rbare1
+   real            :: Rbare2
+   real            :: feff_bare
+   real            :: feff_veg
+   real            :: feff
+   real            :: gvf
+   real            :: tmpVal
+   logical         :: skip 
+! !DESCRIPTION: Computes the drag parition according to Darmenova et al. 2009
+!               Darmenova, K., Sokolik, I. N., Shao, Y., Marticorena, B., and
+!               Bergametti, G.: Development of a physically based dust
+!               emission module within the Weather Research and Forecasting (WRF) model:
+!               Assessment of dust emission parameterizations and input parameters for source regions in Central and East Asia,
+!               J. Geophys. Res.-Atmos., 114, D14201, https://doi.org/10.1029/2008JD011236, 2009
+! !REVISION HISTORY:
+!
+! 27Jun2024 B.Baker/NOAA    - Original implementation
+!
+!EOP   
+
+   gvf = vegfrac 
+
+   ! vegetation effect
+   skip = .false.
+   if (.not.skip) skip = (gvf < 0.0) .or. (gvf >= thresh)
+   if (.not.skip) then
+      Lc_veg = -0.35 * LOG(1. - gvf)
+      Rveg1 = 1.0 / sqrt(1 - sigv * mv * Lc_veg)
+      Rveg2 = 1.0 / sqrt(1 + mv * Betav * Lc_veg)
+      feff_veg = Rveg1 * Rveg2
+   else 
+      feff_veg = 1e-3
+   endif
+
+
+   ! bare surface effect 
+
+   Lc_bare = Lc / (1 - gvf) ! avoid any numberical issues at high Lc 
+   tmpVal = 1 - sigb * mb * Lc_bare
+   skip=.false.
+   if (.not.skip) skip = (gvf < 0.0) .or. (gvf >= thresh)
+   if (.not.skip) skip = (Lc > 0.2) .or. (tmpVal <= 0.0)
+   if (.not.skip) then 
+      Rbare1 = 1.0 / sqrt(1 - sigb * mb * Lc_bare) 
+      Rbare2 = 1.0 / sqrt(1 +  mb*Betab * Lc_bare ) 
+      feff_bare = Rbare1 * Rbare2
+   else
+      feff_bare = 1.0e-3
+   endif
+
+   feff = feff_veg * feff_bare
+
+   if (feff > 1.) then
+      DarmenovaDragPartition = 1.e-3
+   else if (feff <1e-5) then
+      DarmenovaDragPartition = 1.e-3
+   else
+      DarmenovaDragPartition = feff
+   endif
+   
+   end function DarmenovaDragPartition
+
+!===============================================================================
+!BOP
+!
+! !IROUTINE: Leung drag double moment drag - Applies the Leung drag partition for 
+!            vegetative and barse surfaces 
+
+! !REVISION HISTORY:
+!
+! 15Aug2024 B.Baker/NOAA    - Original implementation
+   real function LeungDragPartition(Lc, lai, gvf, thresh)
+! !USES:
+   implicit NONE
+
+! !INPUT PARAMETERS:
+   real, intent(in) :: Lc
+   real, intent(in) :: lai
+   real, intent(in) :: gvf
+   real, intent(in) :: thresh
+! LOCAL VARIABLES:
+   real            :: frac_bare       ! Fraction of bare surface
+   real            :: frac_veg        ! fraction of vegetative surface
+   real            :: K               ! normalized gap length 
+   real            :: feff_bare       ! effective drag partition due to bare surfaces
+   real            :: feff_veg
+   real            :: Rbare1
+   real            :: Rbare2
+   real            :: Lc_bare
+   real            :: feff
+   real            :: tmpVal
+   real            :: vegfrac 
+
+! !CONSTANTS:
+   real, parameter :: LAI_THR = 0.33
+   real, parameter :: c = 4.8
+   real, parameter :: f0 = 0.32
+   real, parameter :: sigb = 1.0
+   real, parameter :: mB = 0.5
+   real, parameter :: Betab = 90.0
+
+   feff_bare = 0.
+   feff_veg = 0.
+   
+   frac_bare  = MAX(1. - LAI / thresh, 0.)
+
+   if ((LAI <= 0) .or. (LAI >= thresh)) then
+      feff_veg = 0.
+   else if (LAI < thresh) then
+      K = 2. * ( 1 / (1 - LAI) - 1)
+      feff_veg = ( K + f0 * c) / (K + c)
+   endif
+   
+   if ((Lc <= 0.2) .and. (Lc > 0) .and. (LAI < thresh)) then 
+      Lc_bare = Lc / frac_bare
+      tmpVal = 1 - sigB * mB * Lc_bare
+      if (tmpVal > 0.0) then 
+         Rbare1 = 1.0 / sqrt(1 - sigB * mB* Lc_bare) 
+         Rbare2 = 1.0 / sqrt(1 + BetaB * mB * Lc_bare ) 
+         feff_bare = Rbare1 * Rbare2
+      else 
+         feff_bare = 0.
+      endif
+   
+   else
+      feff_bare = 0.
+   endif
+   
+   feff = (gvf * feff_veg**3 + frac_bare * feff_bare**3) ** (1./3.)
+
+   if (feff > 1.) then
+      LeungDragPartition = 1.e-3
+   else if (feff <1e-5) then
+      LeungDragPartition = 1.e-3
+   else
+      LeungDragPartition = feff
+   endif
+   
+   end function LeungDragPartition
+
 !==================================================================================
 !BOP
 !
@@ -302,8 +471,9 @@ CONTAINS
 !
 ! !INTERFACE:
    subroutine DustEmissionFENGSHA(fraclake, fracsnow, oro, slc, clay, sand, silt,  &
-                                  ssm, rdrag, airdens, ustar, uthrs, alpha, gamma, &
-                                  kvhmax, grav, rhop, distribution, drylimit_factor, moist_correct, emissions, rc)
+                                  ssm, rdrag, airdens, ustar, vegfrac, lai, uthrs, alpha, gamma, &
+                                  kvhmax, grav, rhop, distribution, drylimit_factor, moist_correct, &
+                                  drag_opt, emissions, rc)
 
 ! !USES:
    implicit NONE
@@ -320,6 +490,8 @@ CONTAINS
    real, dimension(:,:), intent(in) :: rdrag    ! drag partition [1/m]
    real, dimension(:,:), intent(in) :: airdens  ! air density at lowest level [kg/m^3]
    real, dimension(:,:), intent(in) :: ustar    ! friction velocity [m/sec]
+   real, dimension(:,:), intent(in) :: vegfrac  ! vegetative fraction 
+   real, dimension(:,:), intent(in) :: lai      ! leaf area index 
    real, dimension(:,:), intent(in) :: uthrs    ! threshold velocity [m/2]
    real,                 intent(in) :: alpha    ! scaling factor [1]
    real,                 intent(in) :: gamma    ! scaling factor [1]
@@ -329,6 +501,8 @@ CONTAINS
    real, dimension(:),   intent(in) :: distribution    ! normalized dust binned distribution [1]
    real,                 intent(in) :: drylimit_factor ! drylimit tuning factor from zender2003 
    real,                 intent(in) :: moist_correct   ! moisture correction factor
+   integer,              intent(in) :: drag_opt        ! drag partition option
+   
 ! !OUTPUT PARAMETERS:
    real,    intent(out) :: emissions(:,:,:)     ! binned surface emissions [kg/(m^2 sec)]
    integer, intent(out) :: rc                   ! Error return code: __SUCCESS__ or __FAIL__
@@ -354,10 +528,11 @@ CONTAINS
    real                  :: total_emissions
    real                  :: u_sum, u_thresh
    real                  :: smois
+   real                  :: R
 
 ! !CONSTANTS:
    real, parameter       :: ssm_thresh = 1.e-02    ! emit above this erodibility threshold [1]
-
+   real, parameter       :: veg_thresh = 0.4
 !EOP
 !-------------------------------------------------------------------------
 !  Begin
@@ -385,12 +560,23 @@ CONTAINS
        ! skip if we are not on land
        ! --------------------------
        skip = (oro(i,j) /= LAND)
+       
        ! threshold and sanity check for surface input
        ! --------------------------------------------
-       if (.not.skip) skip = (ssm(i,j) < ssm_thresh) &
-         .or. (clay(i,j) < 0.) .or. (sand(i,j) < 0.) &
-         .or. (rdrag(i,j) < 0.)
+       if (drag_opt == 2 ) then ! Darmenova et al, 2009
+          if (.not.skip) skip = (vegfrac(i,j) < 0.) .or. (vegfrac(i,j) >= veg_thresh)
+          if (.not.skip) skip = (rdrag(i,j) > 0.3)
+       else if (drag_opt == 3 ) then ! Leung et al, 2023
+          if (.not.skip) skip = (vegfrac(i,j) < 0.) .or. (lai(i,j) >= veg_thresh)
+       else
+          if (.not.skip) skip = (rdrag(i,j) < 0.)
+       endif
 
+       if (.not.skip) skip = (ssm(i,j) < ssm_thresh)
+       if (.not.skip) skip = (clay(i,j) < 0.) .or. (sand(i,j) < 0.)
+       
+       ! Begin dust emission calculations for this grid point
+       ! ----------------------------------------------------
        if (.not.skip) then
          fracland = max(0., min(1., 1.-fraclake(i,j))) &
                   * max(0., min(1., 1.-fracsnow(i,j)))
@@ -406,7 +592,15 @@ CONTAINS
 
          !  Compute threshold wind friction velocity using drag partition
          !  -------------------------------------------------------------
-         rustar = rdrag(i,j) * ustar(i,j)
+         if (drag_opt == 1) then
+            R = rdrag(i,j)
+         else if (drag_opt == 2) then
+            R = DarmenovaDragPartition(rdrag(i,j), vegfrac(i,j), veg_thresh)
+         else if (drag_opt == 3) then
+            R = LeungDragPartition(rdrag(i,j), lai(i,j), vegfrac(i,j), veg_thresh)
+         end if
+         
+         rustar = R * ustar(i,j)
          
          ! Fecan moisture correction
          ! -------------------------
@@ -437,7 +631,7 @@ CONTAINS
    end do
 
    end subroutine DustEmissionFENGSHA
-
+   
 !==================================================================================
 !BOP
 ! !IROUTINE: DustEmissionGOCART2G
@@ -3189,7 +3383,7 @@ CONTAINS
 
 ! !IROUTINE: WetRemovalUFS
    subroutine WetRemovalUFS( km, klid, bin_ind, cdt, aero_type, kin, grav, radius, &
-                             rainout_eff, aerosol, ple, tmpu, rhoa, pfllsan, pfilsan, &
+                             rainout_eff, wtune, radius_thr, aerosol, ple, tmpu, rhoa, pfllsan, pfilsan, &
                              fluxout, rc )
 
 ! !USES:
@@ -3204,6 +3398,8 @@ CONTAINS
      logical,                         intent(in)    :: kin          ! true for aerosol
      real,                            intent(in)    :: grav         ! gravity [m/sec^2]
      real,                            intent(in)    :: radius       ! Particle radius [um]
+     real,                            intent(in)    :: wtune        ! Washout Tuning factor [-]
+     real,                            intent(in)    :: radius_thr   ! Threshold particle radius for washout[um]
      real, dimension(3),              intent(in)    :: rainout_eff  ! temperature-dependent rainout efficiencies
      real, dimension(:,:,:),          intent(inout) :: aerosol      ! internal state aerosol [kg/kg]
      real, pointer, dimension(:,:,:), intent(in)    :: ple          ! pressure level thickness [Pa]
@@ -3224,13 +3420,41 @@ CONTAINS
 !  08Aug2024 - R. Montuoro (NOAA/NWS/NCEP/EMC), B. Baker (NOAA/OAR/ARL), Initial implementation, based on GEOS-Chem
 !
 ! !Local Variables
-     ! -- local variables
+     ! Grid size  
      integer  :: il, iu, jl, ju
+     ! looping indexes 
      integer  :: i, j, k, km1, ktop, kbot
-     real     :: delp, dqls, dqis, f, ftop, f_prime, f_rainout, f_washout, k_rain, dt
-     real     :: totloss, lossfrac, wetloss, qdwn, pres
-     real     :: alpha, gain, washed
-     real, dimension(:), allocatable :: qq, pdwn, dpog, conc, dconc, delz, c_h2o, cldice, cldliq
+     ! local physical variables 
+     real     :: delp       ! pressure thickness [Pa]
+     real     :: dqls       ! liquid water flux gradient [kg/(m^2 s)]
+     real     :: dqis       ! ice water flux gradient [kg/(m^2 s)]
+     real     :: dqls_kgm3s ! liquid water flux gradient [kg/(m^3 s)]
+     real     :: dqis_kgm3s ! ice water flux gradient [kg/(m^3 s)]
+     real     :: f          ! total precipitation fraction (f_rainout + f_washout) [1]
+     real     :: ftop       ! top of grid box rainout fraction [1]
+     real     :: f_prime    ! rainout fraction in middle layers [1]
+     real     :: f_rainout  ! rainout fraction [1]
+     real     :: f_washout  ! washout fraction [1]
+     real     :: k_rain     ! rainout rate [m^3/s]
+     real     :: dt         ! chemistry model time-step [sec]
+     real     :: totloss    ! total loss fraction
+     real     :: lossfrac   ! loss fraction
+     real     :: wetloss    ! wet loss fraction before evaporation 
+     real     :: qdwn       ! cm3 (h2o) / cm2 (air) / s 
+     real     :: pres       ! pressure [Pa]
+     real     :: alpha      ! ratio of evap. to sublimation
+     real     :: gain       ! gain fraction
+     real     :: washed     ! concentration of washed out tracer
+     real     :: delz       ! thickness of layer [m]
+     real, dimension(:), allocatable :: qq      ! precipatitng water rate [cm3 (h2o) / cm2 (air) / s]
+     real, dimension(:), allocatable :: pdwn    ! preciptation rate at top of grid cells [cm3 (h2o) / cm2 (air) / s]
+     real, dimension(:), allocatable :: dpog    ! pressure thickness of grid cells divided by gravity [Pa / (m/s^2)]
+     real, dimension(:), allocatable :: conc    ! concentration [kg/m2]
+     real, dimension(:), allocatable :: dconc   ! concentration loss kg/m2
+     real, dimension(:), allocatable :: c_h2o   ! concentration of h2o 
+     real, dimension(:), allocatable :: cldice  ! ice concentration
+     real, dimension(:), allocatable :: cldliq  ! liquid water concentration
+     real, dimension(:), allocatable :: delz_cm ! thickness of layer [cm] 
 
      type spc_t
         real     :: retfac
@@ -3243,15 +3467,15 @@ CONTAINS
      type(spc_t) :: spc
 
      ! -- local parameters
-     real, parameter :: one  = 1.0
-     real, parameter :: zero = 0.0
-     real, parameter :: density_ice = 917.0
-     real, parameter :: density_liq = 1.e+03
-     real, parameter :: m_to_cm  = 100.
-     real, parameter :: kg_to_cm3_liq = m_to_cm / density_liq
-     real, parameter :: kg_to_cm3_ice = m_to_cm / density_ice
-     real, parameter :: qq_thr   = 0.0
-     real, parameter :: pdwn_thr = 0.0
+     real, parameter :: one  = 1.0                             ! for code readability
+     real, parameter :: zero = 0.0                             ! for code readability
+     real, parameter :: density_ice = 917.0                    ! density of ice in kg m-3
+     real, parameter :: density_liq = 1.e+03                   ! density of liquid water in kg m-3
+     real, parameter :: m_to_cm  = 100.                        ! conversion factor from m to cm
+     real, parameter :: kg_to_cm3_liq = m_to_cm / density_liq  ! conversion factor from kg to cm3 for liquid water
+     real, parameter :: kg_to_cm3_ice = m_to_cm / density_ice  ! conversion factor from kg to cm3 for ice
+     real, parameter :: qq_thr   = 0.0                         ! cm3 (h2o) / cm3 (air) / s
+     real, parameter :: pdwn_thr = 0.0                         ! cm3 (h2o) / cm2 (air) / s
      real, parameter :: k_min = 1.e-04 ! s-1
      real, parameter :: cwc   = 1.e-06 ! s-1 (recommended by Qiaoqiao Wang et al., 2014. Originally 1.5e-6, see Jacob et al., 2000)
 
@@ -3288,7 +3512,7 @@ CONTAINS
      dt = cdt
 
      allocate(qq(ktop:kbot), pdwn(ktop:kbot), conc(ktop:kbot), dconc(ktop:kbot), dpog(ktop:kbot), &
-              delz(ktop:kbot), c_h2o(ktop:kbot), cldice(ktop:kbot), cldliq(ktop:kbot))
+              c_h2o(ktop:kbot), cldice(ktop:kbot), cldliq(ktop:kbot), delz_cm(ktop:kbot))
 
      do j = jl, ju
        do i = il, iu
@@ -3299,14 +3523,21 @@ CONTAINS
            ! -- initialize auxiliary arrays
            delp = ple(i,j,k) - ple(i,j,km1)
            dpog(k) = delp / grav
-           delz(k) = m_to_cm * dpog(k) / rhoa(i,j,k)
+           delz = dpog(k) / rhoa(i,j,k) ! thickness of layer [m]
+           delz_cm(k) = delz * m_to_cm  ! thickness of layer [cm]
 
            ! -- liquid/ice precipitation formation in grid cell (kg/m2/s)
            dqls = pfllsan(i,j,k) - pfllsan(i,j,km1)
            dqis = pfilsan(i,j,k) - pfilsan(i,j,km1)
 
-           ! -- total precipitation formation (convert from kg/m2/s to cm3/cm3/s)
-           qq(k) = ( kg_to_cm3_liq * dqls + kg_to_cm3_ice * dqis ) / delz(k)
+           ! -- convert from kg/m2/s to kg (H2O) / m3(air) / s
+           dqls_kgm3s = dqls / delz 
+           dqis_kgm3s = dqis / delz 
+
+           ! -- total precipitation formation (convert from kg (H2O) / m3(air) / s to cm3 (H2O) / cm3 (air) /s)
+           ! -- To convert from kg (H2O) / m3(air) / s to cm3 (H2O) / cm3 (air) / s, divide by the density of 
+           ! -- the precipitation (ice or liquid)
+           qq(k) =  dqls_kgm3s / density_liq +  dqis_kgm3s / density_ice
 
            ! -- precipitation flux from upper level (convert from kg/m2/s to cm3/cm2/s)
            pdwn(k) = kg_to_cm3_liq * pfllsan(i,j,km1) &
@@ -3330,19 +3561,18 @@ CONTAINS
            else
              cldliq(k) = zero
            end if
-           cldice(k) = cwc - cldliq(k)
+           cldice(k) = MAX(cwc - cldliq(k), zero) ! ensure cldice >= 0
          end do
 
          ! -- starts at the top
          k = ktop
-         f = zero
          f = zero
          if (qq(k) > qq_thr) then
            ! -- compute rainout rate
            k_rain = k_min + qq(k) / cwc
            f = qq(k) / ( k_rain * cwc )
 
-           call rainout( kin, rainout_eff, f, k_rain, dt, tmpu(i,j,k), delz(k), &
+           call rainout( kin, rainout_eff, f, k_rain, dt, tmpu(i,j,k), delz_cm(k), &
                          pdwn(k), c_h2o(k), cldice(k), cldliq(k), spc, lossfrac )
 
            ! -- compute and apply effective loss fraction
@@ -3379,7 +3609,7 @@ CONTAINS
 
            if ( f > zero ) then
              if ( f_rainout > zero ) then
-               call rainout( kin, rainout_eff, f_rainout, k_rain, dt, tmpu(i,j,k), delz(k), &
+               call rainout( kin, rainout_eff, f_rainout, k_rain, dt, tmpu(i,j,k), delz_cm(k), &
                              pdwn(k), c_h2o(k), cldice(k), cldliq(k), spc, lossfrac )
 
                ! -- compute and apply effective loss fraction
@@ -3395,13 +3625,14 @@ CONTAINS
                  ! -- washout from precipitation leaving through the bottom
                  qdwn = pdwn(k)
                end if
-               call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz(k), dt, spc, lossfrac )
+               call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz_cm(k), dt, &
+                             spc, wtune, radius_thr, lossfrac )
 
                if ( kin ) then
                  ! -- adjust loss fraction for aerosols
                  lossfrac = lossfrac * f_washout / f
 
-                 alpha = abs( qq(k) ) * delz(k) / pdwn(km1)
+                 alpha = abs( qq(k) ) * delz_cm(k) / pdwn(km1)
                  alpha = min( one, alpha )
                  gain  = 0.5 * alpha * dconc(km1)
                  wetloss  = conc(k) * lossfrac - gain
@@ -3412,7 +3643,7 @@ CONTAINS
                end if
                conc(k) = conc(k) - wetloss
                if ( f_rainout > zero ) then
-                 dconc(k) = dconc(k  ) + wetloss
+                 dconc(k) = dconc(k) + wetloss
                else
                  dconc(k) = dconc(km1) + wetloss
                end if
@@ -3432,7 +3663,8 @@ CONTAINS
            f = ftop
            if ( f > zero ) then
              qdwn = pdwn(km1)
-             call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz(k), dt, spc, lossfrac )
+             call washout( kin, radius, f, tmpu(i,j,k), qdwn, delz_cm(k), & 
+                           dt, spc, wtune, radius_thr, lossfrac )
 
              ! -- f is included in lossfrac for aerosols and HNO3
              if ( kin ) then
@@ -3440,7 +3672,7 @@ CONTAINS
              else
                wetloss = f * lossfrac * conc(k)
              end if
-             conc (k) = conc (k  ) - wetloss
+             conc (k) = conc (k) - wetloss
              dconc(k) = dconc(km1) + wetloss
            end if
          end if
@@ -3455,7 +3687,7 @@ CONTAINS
        end do
      end do
 
-     deallocate(qq, pdwn, conc, dconc, dpog, delz, c_h2o, cldice, cldliq)
+     deallocate(qq, pdwn, conc, dconc, dpog, delz_cm, c_h2o, cldice, cldliq)
 
    contains
 
@@ -3531,7 +3763,7 @@ CONTAINS
 
      end subroutine rainout
 
-     subroutine washout( kin, radius, f, tk, qdwn, dz, dt, spc, lossfrac )
+     subroutine washout( kin, radius, f, tk, qdwn, dz, dt, spc, wtune, radius_thr, lossfrac )
 
        implicit none
 
@@ -3543,6 +3775,8 @@ CONTAINS
        real,        intent(in)  :: dz
        real,        intent(in)  :: dt
        type(spc_t), intent(in)  :: spc
+       real,        intent(in)  :: wtune
+       real,        intent(in)  :: radius_thr
        real,        intent(out) :: lossfrac
 
        ! -- begin
@@ -3551,7 +3785,7 @@ CONTAINS
 
        if ( kin ) then
          ! -- kinetic process
-         lossfrac = washfrac_aerosol( radius, f, tk, qdwn, dt )
+         lossfrac = washfrac_aerosol( radius, f, tk, qdwn, dt, wtune, radius_thr)
        else
          ! -- equilibrium process
          lossfrac = washfrac_liq_gas( f, tk, qdwn, dz, dt, spc )
@@ -3587,63 +3821,49 @@ CONTAINS
 
      end function rainfrac
 
-     real function washfrac_aerosol( radius, f, tk, pdwn, dt )
+     real function washfrac_aerosol( radius, f, tk, pdwn, dt, tuning, radius_fine )
 
        implicit none
 
-       real, intent(in) :: radius
-       real, intent(in) :: f
-       real, intent(in) :: tk
-       real, intent(in) :: pdwn
-       real, intent(in) :: dt
+       real, intent(in) :: radius ! particle radius (um)
+       real, intent(in) :: f      ! washout fraction 
+       real, intent(in) :: tk     ! Temperature in grid box (K)
+       real, intent(in) :: pdwn   ! Instant precip rate in grid box (cm3 (H2O) / cm2 (air) / s)
+       real, intent(in) :: dt     ! Timestep (s)
+       real, intent(in) :: tuning  ! Washout tuning factor
+       real, intent(in) :: radius_fine ! fine particle radius threshold (um)
 
        ! -- local variables
        integer         :: i, j
        real            :: dth, pph
 
        ! -- local parameters
-       real, parameter :: radius_fine = 1.0 ! um
        real, parameter :: k_wash = 1.06e-03
-       real, parameter :: h2s = 3600.0
-
-       real, dimension(2,2), parameter :: alpha = reshape([ &
-       ! alpha            | size   | precip. type
-       !------------------|--------|-------------
-         26.0 * k_wash, & ! fine   | solid
-                k_wash, & ! fine   | liquid
-         1.57         , & ! coarse | solid
-         0.92           & ! coarse | liquid
-         ], [2,2])
-
-       real, dimension(2,2), parameter :: beta = reshape([ &
-       ! beta     | size   | precip. type
-       !----------|----------------------
-         0.96 , & ! fine   | solid
-         0.61 , & ! fine   | liquid
-         0.96 , & ! coarse | solid
-         0.79   & ! coarse | liquid
-         ], [2,2])
+       real, parameter :: h2s = 3600.0 ! s-1
 
        ! -- begin
 
        washfrac_aerosol = zero
 
        if ( f > zero ) then
-         ! -- select aerosol category (coarse, fine)
-         j = 1
-         if ( radius > radius_fine ) j = 2
-
-         ! -- select precipitation type (liquid, solid)
-         i = 2
-         if ( tk < 268. ) i = 1
-
          ! -- convert instant rates (s-1) to hourly rates
          pph = 10. * pdwn * h2s
          dth = dt / h2s
 
-         washfrac_aerosol = f * ( one - exp( -alpha(i,j) * (pph / f) ** beta(i,j) * dth ) )
-
-       end if
+         if ( radius < radius_fine ) then 
+            if ( tk >= 268. ) then
+               washfrac_aerosol = F * ( one  - EXP(-k_wash * tuning * (pph / f ) ** 0.61 * dth))
+            else
+               washfrac_aerosol = F * ( one  - EXP(-26. * tuning * k_wash * (pph / f ) ** 0.96 * dth))
+            endif 
+         else
+            if ( tk >= 268. ) then
+               washfrac_aerosol = F * ( one  - EXP(-0.92 * tuning * (pph / f ) ** 0.79 * dth))
+            else
+               washfrac_aerosol = F * ( one  - EXP(-1.57 / 0.5 * tuning * (pph / f ) ** 0.96 * dth))
+            endif
+         endif
+      endif
 
      end function washfrac_aerosol
 

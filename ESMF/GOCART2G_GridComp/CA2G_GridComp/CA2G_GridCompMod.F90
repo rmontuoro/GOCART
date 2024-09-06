@@ -1054,14 +1054,15 @@ contains
 !      Both hydrophobic and hydrophilic modes can be removed
        do n = 1, self%nbins
           rainout_eff = 0.0
-          rainout_eff(1)   = self%fwet(n) ! remove with ice
-          rainout_eff(n+1) = self%fwet(n) ! remove with snow (phobic) or rain (philic)
+          rainout_eff(1)   = self%fwet_ice(n)  ! remove with ice
+          rainout_eff(2)   = self%fwet_snow(n) ! remove with snow
+          rainout_eff(3)   = self%fwet_rain(n) ! remove with rain
 
           call MAPL_VarSpecGet(InternalSpec(n), SHORT_NAME=short_name, __RC__)
           call MAPL_GetPointer(internal, NAME=short_name, ptr=int_ptr, __RC__)
           call WetRemovalUFS  (self%km, self%klid, n, self%cdt, GCsuffix, &
-                               KIN, MAPL_GRAV, self%radius(n), rainout_eff, int_ptr, ple, t, airdens, &
-                               pfl_lsan, pfi_lsan, WT, __RC__)
+                               KIN, MAPL_GRAV, self%radius(n), rainout_eff, self%washout_tuning, & 
+                               self%wet_radius_thr, int_ptr, ple, t, airdens, pfl_lsan, pfi_lsan, WT, __RC__)
        end do
     case default
        _ASSERT_RC(.false.,'Unsupported wet removal scheme: '//trim(self%wet_removal_scheme),ESMF_RC_NOT_IMPL)

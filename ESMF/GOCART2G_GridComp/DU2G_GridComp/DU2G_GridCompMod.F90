@@ -58,6 +58,7 @@ module DU2G_GridCompMod
        real, allocatable      :: sdist(:)       ! FENGSHA aerosol fractional size distribution [1]
        real                   :: alpha          ! FENGSHA scaling factor
        real                   :: gamma          ! FENGSHA tuning exponent
+       integer                :: drag_opt       ! FENGSHA drag option 1 - input only, 2 - Darmenova, 3 - Leung
        real                   :: kvhmax         ! FENGSHA max. vertical/horizontal mass flux ratio [1]
        real                   :: f_sdl          ! FENGSHA drylimit tuning factor
        real                   :: Ch_DU_res(NHRES) ! resolutions used for Ch_DU
@@ -120,6 +121,7 @@ contains
     logical                            :: data_driven = .true.
     logical                            :: file_exists
     integer :: num_threads
+    character(len=255) :: msg
 
     __Iam__('SetServices')
 
@@ -161,6 +163,8 @@ contains
     call ESMF_ConfigGetAttribute (cfg, self%rlow,       label='radius_lower:', __RC__)
     call ESMF_ConfigGetAttribute (cfg, self%rup,        label='radius_upper:', __RC__)
 
+    ! Choose Emission Scheme
+    !-----------------------
     call ESMF_ConfigGetAttribute (cfg, emission_scheme, label='emission_scheme:', default='ginoux', __RC__)
     self%emission_scheme = ESMF_UtilStringLowerCase(trim(emission_scheme), __RC__)
 
@@ -170,6 +174,7 @@ contains
        write (*,*) trim(Iam)//": Dust emission scheme is "//trim(self%emission_scheme)
     end if
 
+    ! Point Sources 
     call ESMF_ConfigGetAttribute (cfg, self%point_emissions_srcfilen, &
                                   label='point_emissions_srcfilen:', default='/dev/null', __RC__)
     if ( (index(self%point_emissions_srcfilen,'/dev/null')>0) ) then
@@ -182,11 +187,22 @@ contains
 !   --------------------------------
     select case (self%emission_scheme)
     case ('fengsha')
-       call ESMF_ConfigGetAttribute (cfg, self%alpha,      label='alpha:', __RC__)
-       call ESMF_ConfigGetAttribute (cfg, self%gamma,      label='gamma:', __RC__)
-       call ESMF_ConfigGetAttribute (cfg, self%f_swc,      label='soil_moisture_factor:', __RC__)
-       call ESMF_ConfigGetAttribute (cfg, self%f_sdl,      label='soil_drylimit_factor:', __RC__)
-       call ESMF_ConfigGetAttribute (cfg, self%kvhmax,     label='vertical_to_horizontal_flux_ratio_limit:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%alpha,    label='alpha:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%gamma,    label='gamma:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%f_swc,    label='soil_moisture_factor:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%f_sdl,    label='soil_drylimit_factor:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%kvhmax,   label='vertical_to_horizontal_flux_ratio_limit:', __RC__)
+       call ESMF_ConfigGetAttribute (cfg, self%drag_opt, label='drag_partition_option:', __RC__)
+       
+       if (MAPL_AM_I_ROOT()) then
+         write (*,*) "FENGSHA: config: alpha: " , self%alpha
+         write (*,*) "FENGSHA: config: gamma: " , self%gamma
+         write (*,*) "FENGSHA: config: soil_moisture_factor: " , self%f_swc
+         write (*,*) "FENGSHA: config: soil_drylimit_factor: " , self%f_sdl
+         write (*,*) "FENGSHA: config: vertical_to_horizontal_flux_ratio_limit: " ,  self%kvhmax
+         write (*,*) "FENGSHA: config: drag_partition_option: " , self%drag_opt
+       end if
+       
     case ('k14')
        call ESMF_ConfigGetAttribute (cfg, self%clayFlag,   label='clayFlag:', __RC__)
        call ESMF_ConfigGetAttribute (cfg, self%f_swc,      label='soil_moisture_factor:', __RC__)
@@ -800,11 +816,10 @@ contains
        if (associated(DU_EROD)) DU_EROD = f_erod_
 
     case ('fengsha')
-
-       call DustEmissionFENGSHA (frlake, frsnow, lwi, slc, du_clay, du_sand, du_silt,       &
-                                 du_ssm, du_rdrag, airdens(:,:,self%km), ustar, du_uthres,  &
-                                 self%alpha, self%gamma, self%kvhmax, MAPL_GRAV,   &
-                                 self%rhop, self%sdist, self%f_sdl, self%f_swc, emissions_surface,  __RC__)
+        call DustEmissionFENGSHA (frlake, frsnow, lwi, slc, du_clay, du_sand, du_silt,       &
+                du_ssm, du_rdrag, airdens(:,:,self%km), ustar, du_gvf, du_lai, du_uthres,  &
+                self%alpha, self%gamma, self%kvhmax, MAPL_GRAV,   &
+                self%rhop, self%sdist, self%f_sdl, self%f_swc, self%drag_opt, emissions_surface,  __RC__)
 
     case ('ginoux')
 
@@ -991,11 +1006,12 @@ contains
    case ('ufs')
       rainout_eff = 0.0
       do n = 1, self%nbins
-         rainout_eff(1) = self%fwet(n)  ! remove with ice
-         rainout_eff(2) = self%fwet(n)  ! remove with snow
-         call WetRemovalUFS     (self%km, self%klid, n, self%cdt, 'dust', KIN, MAPL_GRAV, &
-                                 self%radius(n), rainout_eff, DU(:,:,:,n), ple, t, airdens, &
-                                 pfl_lsan, pfi_lsan, DUWT, __RC__)
+        rainout_eff(1)   = self%fwet_ice(n)  ! remove with ice
+        rainout_eff(2)   = self%fwet_snow(n) ! remove with snow
+        rainout_eff(3)   = self%fwet_rain(n) ! remove with rain
+        call WetRemovalUFS     (self%km, self%klid, n, self%cdt, 'dust', KIN, MAPL_GRAV, &
+                                 self%radius(n), rainout_eff, self%washout_tuning, self%wet_radius_thr, &
+                                 DU(:,:,:,n), ple, t, airdens, pfl_lsan, pfi_lsan, DUWT, __RC__)
       end do
    case default
       _ASSERT_RC(.false.,'Unsupported wet removal scheme: '//trim(self%wet_removal_scheme),ESMF_RC_NOT_IMPL)
